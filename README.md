@@ -22,7 +22,7 @@ Seven items in Finder; 28 files once GitHub unpacks `map-images`.
 
 The map is the instrument. There is no separate list to tap.
 
-- **Tap a station** to start it. Tap it again to stop.
+- **Click or tap a station** to start it. Do it again to stop.
 - A disc is **blank until you first tap it**, and never blank again. Only
   **clear** returns it to blank.
 - A running station wears a **ring that breathes**, and its disc becomes a
@@ -40,7 +40,8 @@ The map is the instrument. There is no separate list to tap.
 - **Discs + / −** tunes that one size to your screen, from half to double.
   The setting is remembered, as is **Names**.
 - The tap target *is* the disc — same centre, same size, never under 44 px.
-- **Long-press a station** to correct its count. The strip offers −30 −10 −5
+- **Control-click a station** (or right-click, or press and hold on a
+  touchscreen) to correct its count. The strip offers −30 −10 −5
   +5 +10 +30, **clear**, and a box for typed minutes: **Set** makes the
   station read exactly what you typed, **Add** puts it on top of what is
   there. Enter means Set. Use it for a session the instrument never saw. It
