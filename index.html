@@ -1,0 +1,1658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Poets">
+<meta name="theme-color" content="#e6dcc4">
+<title>Pensacola Poets</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<style>
+/* =====================================================================
+   PENSACOLA POETS — THE COMPLETE INSTRUMENT
+   One file, three faces:
+
+     SURVEY — the day's stopwatches. Tap a station to start it, tap
+              again to stop. Concurrent timers are permitted by design.
+     PLATE  — the engraved map with discs sized by the minutes logged.
+              Shows the live day, or any filed day from the ledger.
+     LEDGER — every filed day, kept as a table. Export / import as
+              JSONL so the record can be backed up or moved.
+
+   The map background rotates daily through the images in ./map-images/
+   (see the MAPS constant). Discs never derive a score, a total
+   judgement, or a target. Every disc is one size, and reads as a
+   stopwatch face: the station, and the time it holds. Where the day
+   went is told by the numbers, not by the geometry.
+   ===================================================================== */
+
+:root{
+  --paper:      #e6dcc4;
+  --paper-hi:   #f0e8d5;
+  --paper-lo:   #dbcfb2;
+  --ink:        #35301f;
+  --ink-soft:   #7d735c;
+  --hair:       #b9aa87;
+  --verdigris:  #40695d;   /* the one live colour: a survey in progress */
+  --rust:       #8c4a2f;
+
+  --serif: "Iowan Old Style","Palatino Linotype",Palatino,"Baskerville",
+           "Times New Roman",Georgia,serif;
+  --mono:  ui-monospace,"SFMono-Regular","DejaVu Sans Mono","Courier New",monospace;
+}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+
+html{background:var(--paper-lo)}
+body{
+  font-family:var(--serif);
+  color:var(--ink);
+  background:
+    radial-gradient(ellipse 120% 80% at 50% 0%, rgba(255,252,240,.55), transparent 60%),
+    radial-gradient(ellipse 90% 60% at 12% 88%, rgba(120,96,52,.13), transparent 62%),
+    radial-gradient(ellipse 70% 50% at 92% 40%, rgba(120,96,52,.10), transparent 60%),
+    var(--paper);
+  min-height:100vh;
+  padding:
+    calc(10px + env(safe-area-inset-top)) 12px
+    calc(18px + env(safe-area-inset-bottom));
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+
+/* ---- view switching: exactly one .view is shown at a time ---------- */
+.view{display:none}
+.view[data-on="1"]{display:block}
+
+/* ---- top navigation ------------------------------------------------ */
+nav{
+  max-width:520px;margin:0 auto 10px;display:flex;gap:6px;
+}
+nav.wide{max-width:1100px}
+nav button{
+  flex:1;font-family:var(--serif);font-style:italic;font-size:13.5px;
+  padding:9px 4px;background:none;color:var(--ink-soft);
+  border:.75px solid var(--hair);cursor:pointer;letter-spacing:.02em;
+  touch-action:manipulation;
+}
+nav button[aria-pressed="true"]{
+  background:var(--ink);color:var(--paper-hi);border-color:var(--ink);
+}
+
+/* ---- the framed plate card (Survey view) --------------------------- */
+.plate{
+  max-width:520px;margin:0 auto;
+  border:1.5px solid var(--ink);
+  padding:3px;
+  box-shadow:0 1px 0 rgba(255,255,255,.35) inset;
+}
+.plate-in{border:.75px solid var(--hair);padding:16px 14px 14px}
+
+.mast{text-align:center;padding-bottom:12px;border-bottom:.75px solid var(--hair)}
+.mast .brand{font-size:10.5px;letter-spacing:.34em;text-transform:uppercase;
+  color:var(--ink-soft);font-weight:600}
+.mast .day{font-size:23px;font-style:italic;margin-top:5px;letter-spacing:.01em}
+.mast .rule{width:44px;height:0;border-top:.75px solid var(--hair);margin:9px auto 0}
+
+/* ---- the summit: rendered, never counted --------------------------- */
+.summit{
+  display:flex;align-items:center;gap:14px;
+  padding:16px 2px 15px;border-bottom:.75px solid var(--hair);
+}
+.summit svg{flex:0 0 auto;display:block}
+.summit .txt .zone{font-size:9px;letter-spacing:.26em;text-transform:uppercase;
+  color:var(--ink-soft)}
+.summit .txt .nm{font-size:16.5px;font-style:italic;margin-top:3px;line-height:1.25}
+.summit .txt .gloss{font-size:11px;color:var(--ink-soft);font-style:italic;margin-top:3px}
+
+/* ---- zone headers and station rows --------------------------------- */
+.zone-hd{
+  font-size:9px;letter-spacing:.26em;text-transform:uppercase;
+  color:var(--ink-soft);margin:17px 2px 4px;
+  display:flex;align-items:center;gap:9px;
+}
+.zone-hd::after{content:"";flex:1;border-top:.75px solid var(--hair)}
+
+.stn{
+  display:flex;align-items:center;gap:13px;
+  padding:9px 2px;width:100%;background:none;border:0;
+  border-bottom:.75px solid rgba(185,170,135,.42);
+  font:inherit;color:inherit;text-align:left;cursor:pointer;
+  touch-action:manipulation;
+  transition:background .18s ease;
+}
+.stn:last-of-type{border-bottom:0}
+.stn:active{background:rgba(120,96,52,.09)}
+.stn:focus-visible{outline:1.5px solid var(--verdigris);outline-offset:2px}
+
+.disc-cell{flex:0 0 64px;height:64px;display:grid;place-items:center}
+.disc-cell svg{display:block;overflow:visible}
+
+.stn .nm{flex:1;min-width:0;font-size:16.5px;font-style:italic;line-height:1.2}
+.stn .sub{display:block;font-style:normal;font-size:10.5px;
+  color:var(--ink-soft);margin-top:3px;letter-spacing:.02em}
+.stn[data-on="1"] .sub{color:var(--verdigris)}
+.stn .sub .long{color:var(--rust)}
+
+.stn .fig{flex:0 0 auto;text-align:right;font-family:var(--mono);
+  font-variant-numeric:tabular-nums}
+.fig .m{font-size:21px;letter-spacing:-.02em;display:block;line-height:1}
+.fig .u{font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--ink-soft);font-family:var(--serif);display:block;margin-top:3px}
+.stn[data-on="1"] .fig .m{color:var(--verdigris)}
+
+/* ---- correction strip (open by tapping a station's numeral) -------- */
+.fix{
+  display:none;gap:6px;padding:0 2px 11px;
+  border-bottom:.75px solid rgba(185,170,135,.42);
+  flex-wrap:wrap;align-items:center;
+}
+.fix[data-open="1"]{display:flex}
+.fix .lbl{font-size:9px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--ink-soft);width:100%;margin-bottom:2px}
+.fix button{
+  font:inherit;font-family:var(--mono);font-size:12.5px;
+  padding:6px 10px;background:var(--paper-hi);color:var(--ink);
+  border:.75px solid var(--hair);cursor:pointer;touch-action:manipulation;
+}
+.fix button:active{background:var(--paper-lo)}
+.fix button.zero{
+  font-family:var(--serif);font-style:italic;font-size:12.5px;
+  margin-left:auto;color:var(--rust);border-color:rgba(140,74,47,.45);
+}
+
+/* ---- footer of the survey card ------------------------------------- */
+.foot{margin-top:20px;padding-top:14px;border-top:1px solid var(--ink)}
+.btn{
+  display:block;width:100%;font-family:var(--serif);font-style:italic;
+  font-size:15px;padding:12px;background:var(--ink);color:var(--paper-hi);
+  border:0;cursor:pointer;letter-spacing:.02em;touch-action:manipulation;
+}
+.btn:active{background:#231f13}
+.btn.ghost{background:none;color:var(--ink);border:.75px solid var(--hair);
+  margin-top:8px;font-size:13.5px;padding:10px}
+.btn.ghost:active{background:rgba(120,96,52,.09)}
+
+.close{display:none;margin-top:13px}
+.close[data-open="1"]{display:block}
+.close .lbl{font-size:9px;letter-spacing:.24em;text-transform:uppercase;
+  color:var(--ink-soft);margin-bottom:6px}
+textarea{
+  width:100%;height:96px;font-family:var(--mono);font-size:11px;line-height:1.6;
+  padding:9px;background:var(--paper-hi);color:var(--ink);
+  border:.75px solid var(--hair);resize:vertical;
+}
+
+.note{font-size:10.5px;color:var(--ink-soft);font-style:italic;
+  text-align:center;margin-top:13px;line-height:1.6}
+
+/* ---- notices (stale day, stranded timer, missing map) --------------- */
+.stale{
+  display:none;max-width:520px;margin:0 auto 12px;padding:11px 12px;
+  border:.75px solid var(--rust);background:rgba(140,74,47,.07);
+  font-size:12.5px;font-style:italic;line-height:1.5;
+}
+.stale[data-open="1"]{display:block}
+.stale b{font-style:normal;font-weight:600}
+.stale button{
+  display:block;margin-top:8px;font-family:var(--serif);font-style:italic;
+  font-size:13px;padding:8px 12px;background:var(--ink);color:var(--paper-hi);
+  border:0;cursor:pointer;
+}
+
+/* ---- Plate view ------------------------------------------------------ */
+.wide{max-width:1100px;margin:0 auto}
+.bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.bar button,.bar label.fb{
+  font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+  padding:8px 11px;background:var(--paper-hi);color:var(--ink);
+  border:.75px solid var(--hair);cursor:pointer;touch-action:manipulation;
+}
+.bar button[aria-pressed="true"]{background:var(--ink);color:var(--paper-hi);border-color:var(--ink)}
+.bar button:active,.bar label.fb:active{background:var(--paper-lo)}
+.bar .sp{flex:1}
+input[type=file]{display:none}
+.stage{border:1.5px solid var(--ink);padding:3px;background:var(--paper-hi)}
+.stage-in{border:.75px solid var(--hair)}
+#cv{display:block;width:100%;height:auto}
+#cv.cal{cursor:grab}
+.plate-cap{font-size:11px;font-style:italic;color:var(--ink-soft);
+  text-align:center;margin-top:8px;line-height:1.5}
+.calpane{display:none;margin-top:10px}
+.calpane[data-open="1"]{display:block}
+.calpane .lbl{font-size:9px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--ink-soft);margin:10px 0 5px}
+
+/* ---- Ledger view ----------------------------------------------------- */
+.ledger table{
+  width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px;
+  background:var(--paper-hi);border:.75px solid var(--hair);
+}
+.ledger th,.ledger td{padding:6px 7px;border-bottom:.75px solid rgba(185,170,135,.5);
+  text-align:right;white-space:nowrap}
+.ledger th{font-family:var(--serif);font-style:italic;font-weight:400;
+  font-size:11.5px;color:var(--ink-soft);border-bottom:.75px solid var(--ink)}
+.ledger th:first-child,.ledger td:first-child{text-align:left}
+.ledger tbody tr{cursor:pointer}
+.ledger tbody tr:active{background:rgba(120,96,52,.09)}
+.ledger td.tot{font-weight:600}
+.ledger td.del{color:var(--rust);cursor:pointer;text-align:center;font-family:var(--serif)}
+.ledger .empty{font-style:italic;color:var(--ink-soft);text-align:center;
+  padding:22px 10px;font-family:var(--serif);font-size:13px}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+@media (prefers-reduced-motion:no-preference){
+  .pulse{animation:brk 3.4s ease-in-out infinite}
+  @keyframes brk{
+    0%,100%{opacity:.85;transform:scale(1)}
+    50%    {opacity:.30;transform:scale(1.12)}
+  }
+}
+
+/* ---- print: the plate alone, landscape ------------------------------- */
+@media print{
+  body{background:#fff;padding:0}
+  nav,.bar,.plate-cap,.calpane,.stale{display:none!important}
+  .view{display:none!important}
+  #v-plate{display:block!important}
+  .wide{max-width:none}
+  .stage{border:none;background:#fff}
+  @page{size:landscape;margin:8mm}
+}
+
+/* ---- tap layer on the plate ----------------------------------------
+   The map itself starts and stops the timers. Transparent circular
+   buttons sit over the canvas at the calibrated station coordinates.
+   A running station wears a ring that breathes. The ring is CSS, so
+   the canvas is never repainted for the sake of the animation. ---- */
+.stage-in{position:relative}
+/* The discs live on their own transparent layer. The map beneath is
+   drawn once; only this layer is repainted while a stopwatch runs. */
+.over{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+.taps{position:absolute;inset:0;pointer-events:none}
+.taps[data-off="1"]{display:none}
+.tap{
+  position:absolute;transform:translate(-50%,-50%);
+  border:0;padding:0;margin:0;background:none;border-radius:50%;
+  pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;display:grid;place-items:center}
+.tap:focus-visible{outline:2px solid #40695d;outline-offset:2px}
+.tap .halo{
+  position:absolute;inset:14%;border-radius:50%;
+  background:rgba(64,105,93,.16);opacity:0;transition:opacity .12s}
+.tap:active .halo{opacity:1}
+.tap .pulse{
+  position:absolute;inset:6%;border-radius:50%;
+  border:2.5px solid #40695d;opacity:0;transform:scale(.72)}
+.tap[data-run="1"] .pulse{opacity:1;animation:poets-pulse 2s ease-in-out infinite}
+@keyframes poets-pulse{
+  0%,100%{transform:scale(.70);opacity:.95}
+  50%    {transform:scale(.92);opacity:.30}
+}
+/* the correction strip, opened by a long press on a station */
+.fixpop{
+  position:absolute;transform:translate(-50%,10px);z-index:5;
+  display:none;gap:5px;align-items:center;flex-wrap:wrap;
+  max-width:260px;padding:7px 8px;
+  background:var(--paper-hi,#f2ead6);border:1.5px solid var(--ink,#231c11);
+  box-shadow:0 6px 18px rgba(0,0,0,.28)}
+.fixpop[data-open="1"]{display:flex}
+.fixpop .lbl{
+  width:100%;font:italic 11.5px "Iowan Old Style",Georgia,serif;
+  color:var(--ink-soft,#4a3e2c)}
+.fixpop button{
+  font:600 12px ui-monospace,Menlo,monospace;padding:7px 9px;min-width:42px;
+  background:#fbf7ed;border:1px solid var(--ink,#231c11);cursor:pointer}
+.fixpop button.zero{font-style:italic}
+.fix .entry,
+.fixpop .entry{display:flex;gap:5px;align-items:center;width:100%;
+  margin-top:3px;padding-top:6px;border-top:1px solid rgba(35,28,17,.25)}
+.fix .entry input,
+.fixpop .entry input{
+  flex:1;min-width:56px;width:100%;
+  font:600 13px ui-monospace,Menlo,monospace;padding:7px 8px;
+  background:#fbf7ed;border:1px solid var(--ink,#231c11);color:inherit}
+@media print{ .taps,.fixpop{display:none!important} }
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <button data-v="plate"  aria-pressed="true">Plate</button>
+  <button data-v="survey" aria-pressed="false">Survey</button>
+  <button data-v="ledger" aria-pressed="false">Ledger</button>
+</nav>
+
+<!-- Notices live above whichever view is open -->
+<div class="stale" id="stale"></div>
+
+<!-- ================= SURVEY: the day's stopwatches ================= -->
+<div class="view" id="v-survey" data-on="0">
+  <div class="plate"><div class="plate-in">
+
+    <div class="mast">
+      <div class="brand">Pensacola Poets</div>
+      <div class="day" id="day">—</div>
+      <div class="rule"></div>
+    </div>
+
+    <div class="summit">
+      <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">
+        <g stroke="#35301f" fill="none" stroke-linecap="round">
+          <g stroke-width=".7" opacity=".55">
+            <path d="M32 4.5v5.5"/><path d="M32 54v5.5"/>
+            <path d="M4.5 32h5.5"/><path d="M54 32h5.5"/>
+            <path d="M12.6 12.6l3.9 3.9"/><path d="M47.5 47.5l3.9 3.9"/>
+            <path d="M51.4 12.6l-3.9 3.9"/><path d="M16.5 47.5l-3.9 3.9"/>
+          </g>
+          <g stroke-width=".55" opacity=".34">
+            <path d="M20.5 6.6l2.2 5.1"/><path d="M41.3 52.3l2.2 5.1"/>
+            <path d="M43.5 6.6l-2.2 5.1"/><path d="M20.5 57.4l2.2-5.1"/>
+            <path d="M6.6 20.5l5.1 2.2"/><path d="M52.3 41.3l5.1 2.2"/>
+            <path d="M6.6 43.5l5.1-2.2"/><path d="M52.3 22.7l5.1-2.2"/>
+          </g>
+          <path d="M32 15.5L45.5 40H18.5z" stroke-width="1.35"/>
+          <g stroke-width=".55" opacity=".5">
+            <path d="M26.4 35.5h11.2"/><path d="M28.4 31.8h7.2"/><path d="M30.2 28.1h3.6"/>
+          </g>
+        </g>
+      </svg>
+      <div class="txt">
+        <div class="zone">The Summit</div>
+        <div class="nm">Father, Son &amp; Holy&nbsp;Spirit</div>
+        <div class="gloss">ineffable — never counted</div>
+      </div>
+    </div>
+
+    <div id="zones"></div>
+
+    <div class="foot">
+      <button class="btn" id="b-close">Close the plate</button>
+      <div class="close" id="close">
+        <div class="lbl">The day's line</div>
+        <textarea id="out" spellcheck="false" readonly></textarea>
+        <button class="btn" id="b-file" style="margin-top:8px">
+          File into the ledger &amp; begin a new day</button>
+        <button class="btn ghost" id="b-copy">Copy the line</button>
+      </div>
+      <div class="note" id="note">
+        Tap a station to start it, tap again to stop.
+        Tap its numeral to correct the count.
+      </div>
+    </div>
+
+  </div></div>
+</div>
+
+<!-- ================= PLATE: the map with today's discs ================= -->
+<div class="view wide" id="v-plate" data-on="1">
+  <div class="bar">
+    <button id="b-live">Today, live</button>
+    <span class="sp"></span>
+    <button id="b-smaller">Discs &minus;</button>
+    <button id="b-bigger">Discs &plus;</button>
+    <button id="b-labels" aria-pressed="true">Names</button>
+    <button id="b-print">Print</button>
+    <button id="b-png">Save PNG</button>
+    <button id="b-file-jump">Close the day</button>
+    <button id="b-calib" aria-pressed="false">Calibrate</button>
+    <label class="fb">Map file&hellip;<input type="file" id="f-img" accept="image/*"></label>
+  </div>
+
+  <div class="stage"><div class="stage-in"><canvas id="cv" width="1448" height="1086"></canvas><canvas id="cv2" class="over"></canvas><div class="taps" id="taps"></div><div class="fixpop" id="fixpop"></div></div></div>
+  <div class="plate-cap" id="cap"></div>
+
+  <div class="calpane" id="calpane">
+    <div class="lbl">Calibration — drag a station on the map; saved per map image</div>
+    <div class="bar">
+      <button id="b-cal-reset">Reset this map</button>
+      <button id="b-cal-copy">Copy coordinates</button>
+      <button id="b-cal-paste">Load from box</button>
+    </div>
+    <textarea id="calout" spellcheck="false" style="height:68px"></textarea>
+  </div>
+</div>
+
+<!-- ================= LEDGER: the filed days ================= -->
+<div class="view wide ledger" id="v-ledger">
+  <div class="scroll"><table>
+    <thead><tr id="lg-head"></tr></thead>
+    <tbody id="lg-body"></tbody>
+  </table></div>
+  <div class="empty" id="lg-empty">No days have been filed yet.
+    Close the plate in the Survey to file the first one.</div>
+
+  <div class="bar" style="margin-top:12px">
+    <button id="b-exp">Export JSONL</button>
+    <button id="b-imp">Import from box</button>
+    <label class="fb">Import file&hellip;<input type="file" id="f-imp" accept=".json,.jsonl,.txt"></label>
+  </div>
+  <textarea id="io" spellcheck="false"
+    placeholder='{"date":"2026-08-08","minutes":{"rosary":22,"ingenium":210}}'></textarea>
+  <div class="note">Tap a row to see that day on the plate.
+    Export before moving devices — the ledger lives in this browser's storage.</div>
+</div>
+
+<script>
+/* =====================================================================
+   CONFIGURATION — the parts most likely to be edited by hand
+   ===================================================================== */
+
+/* The rotating backgrounds. One image per day, cycling in filename
+   order. To add images, drop them in the folder using the same naming
+   pattern and raise `count`. `epoch` anchors the cycle: on that date
+   image 1 is shown, the next day image 2, and so on. */
+const MAPS = {
+  dir:    "map-images",          // folder beside this HTML file
+  prefix: "pensa-poets-map",     // filename prefix
+  ext:    ".webp",
+  count:  22,                    // how many images exist (map1 … mapN)
+  epoch:  "2026-08-15"           // date on which image 1 is shown
+};
+
+/* The eight stations. `ref` is the reference session in minutes: a disc
+   drawn at base size means one satisfactory session, and disc AREA is
+   proportional to the fraction of that session, so a 30-minute session
+   and a six-hour Ingenium carry the same visual weight.
+   `x`/`y` are default plate coordinates (fractions of image size);
+   per-map overrides are made in Calibrate mode and stored separately.
+   Glosses (`g`) are freely editable. */
+const STATIONS = [
+ /* The id stays "rosary": it is the key under which every filed day
+    and every calibration was written. Only the name on the map changed. */
+ {id:"rosary",      z:"The Foothills",      n:"Mater Christi", g:"rosary, little office, prayer", ref:30,  x:0.4820, y:0.2236},
+ {id:"recollectio", z:"The Foothills",      n:"Recollectio", g:"silence, wordless",             ref:30,  x:0.6786, y:0.2723},
+ {id:"hypomnema",   z:"The Forest",         n:"Hypomnema",   g:"dossier read, journal written", ref:30,  x:0.4188, y:0.4036},
+ {id:"ingenium",    z:"The Forest",         n:"Ingenium",    g:"making and selling",            ref:360, x:0.2774, y:0.5134},
+ {id:"nauticus",    z:"The Coast",          n:"Nauticus",    g:"on the water",                  ref:180, x:0.7467, y:0.4188},
+ {id:"agon",        z:"The Strand & Dunes", n:"Agōn",       g:"deliberate training",           ref:30,  x:0.5550, y:0.5697},
+ {id:"eukinesia",   z:"The Strand & Dunes", n:"Eukinēsía",  g:"mobility, fascia, stretching",  ref:30,  x:0.7211, y:0.6777},
+ {id:"kinesis",     z:"The Strand & Dunes", n:"Kinesis",     g:"Zone 1 movement",               ref:360, x:0.4460, y:0.7404}
+];
+
+const LONG_RUN_MS = 3 * 3600e3;   // a station running this long is flagged
+const STRAND_MS   = 12 * 3600e3;  // running longer than this = stranded, stopped
+const R_MIN = 5.5, R_REF = 24, R_CAP = 30;   // survey-row disc geometry (px)
+
+/* localStorage keys. Bump the version only on a breaking format change. */
+const LS = {
+  day:    "poets.v2.day",     // the live day: accumulated ms + running starts
+  ledger: "poets.v2.ledger",  // array of filed days: {date, minutes:{id:min}}
+  cal:    "poets.v2.cal",     // per-map coordinate overrides
+  view:   "poets.v2.view"     // disc size and name labels, as set by hand
+};
+
+/* =====================================================================
+   STORAGE — localStorage with a graceful in-memory fall-back
+   ===================================================================== */
+const store = (() => {
+  let live = true, mem = {};
+  try { localStorage.setItem("__p","1"); localStorage.removeItem("__p"); }
+  catch(e){ live = false; }
+  return {
+    live,
+    get(k){ try{ return live ? localStorage.getItem(k) : (mem[k] ?? null); }
+            catch(e){ return mem[k] ?? null; } },
+    set(k,v){ try{ live ? localStorage.setItem(k,v) : (mem[k]=v); }
+              catch(e){ mem[k]=v; } }
+  };
+})();
+
+/* =====================================================================
+   DATES
+   ===================================================================== */
+const isoDate = d => {
+  const p = n => String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
+};
+const longDate = iso => {
+  const [y,m,d] = iso.split("-").map(Number);
+  return new Date(y, m-1, d).toLocaleDateString(undefined,
+    {weekday:"long", month:"long", day:"numeric"});
+};
+/* Whole days between two ISO dates, computed in UTC so daylight-saving
+   shifts can never make a day count as zero or two. */
+const dayDiff = (a,b) => {
+  const u = iso => { const [y,m,d] = iso.split("-").map(Number);
+                     return Date.UTC(y, m-1, d); };
+  return Math.round((u(a) - u(b)) / 864e5);
+};
+
+/* Which map image belongs to a given date. */
+function mapFileFor(iso){
+  const n = ((dayDiff(iso, MAPS.epoch) % MAPS.count) + MAPS.count) % MAPS.count;
+  return MAPS.prefix + (n + 1) + MAPS.ext;
+}
+
+/* =====================================================================
+   LIVE-DAY STATE
+   Accumulated milliseconds per station, plus — for any running station —
+   the wall-clock instant it was started. Elapsed time is always derived
+   from the clock, never from a tick loop, so the day keeps counting
+   while the screen is dark or the app is backgrounded.
+   ===================================================================== */
+const blank = date => ({
+  date,
+  acc: Object.fromEntries(STATIONS.map(s => [s.id, 0])),
+  run: Object.fromEntries(STATIONS.map(s => [s.id, null]))
+});
+
+/* Repair anything written by an older or partial roster. */
+function normalise(raw){
+  if (!raw || typeof raw.date !== "string") return null;
+  const st = blank(raw.date);
+  for (const s of STATIONS){
+    const a = raw.acc?.[s.id], r = raw.run?.[s.id];
+    if (typeof a === "number" && isFinite(a)) st.acc[s.id] = Math.max(0, a);
+    if (typeof r === "number" && isFinite(r)) st.run[s.id] = r;
+  }
+  return st;
+}
+const total = st => STATIONS.reduce((n,s) => n + st.acc[s.id], 0);
+
+/* --- second persistence layer: the tab's own address ------------------
+   Browser storage on a file:// page is the least dependable link in the
+   chain, so every change to the live day is mirrored into the URL hash
+   via replaceState — no history entries, no flicker. A tab the browser
+   restores after storage was cleared still carries the day home. ------ */
+const toHash = () => {
+  try { history.replaceState(null, "", "#s=" + btoa(JSON.stringify(S))); }
+  catch(e){}
+};
+const fromHash = () => {
+  try {
+    const m = location.hash.match(/#s=(.+)$/);
+    return m ? JSON.parse(atob(m[1])) : null;
+  } catch(e){ return null; }
+};
+
+let S, stranded = [];
+(function loadDay(){
+  let a = null;
+  try { a = normalise(JSON.parse(store.get(LS.day) || "null")); } catch(e){}
+  const b = normalise(fromHash());
+
+  if (a && b) S = (a.date === b.date)
+                ? (total(b) > total(a) ? b : a)   // trust the fuller record
+                : (a.date > b.date ? a : b);      // trust the later day
+  else        S = a || b || blank(isoDate(new Date()));
+
+  /* A station left running overnight — or a tablet whose clock jumped
+     when it next found the network — would otherwise credit a fiction.
+     Stop it and credit nothing; the correction strip is one tap away. */
+  for (const s of STATIONS){
+    const t = S.run[s.id];
+    if (t && (Date.now() - t > STRAND_MS || t > Date.now() + 60e3)){
+      S.run[s.id] = null;
+      stranded.push(s.n);
+    }
+  }
+})();
+
+const saveDay = () => { store.set(LS.day, JSON.stringify(S)); toHash(); };
+
+const elapsed = id => S.acc[id] + (S.run[id] ? Date.now() - S.run[id] : 0);
+const minutes = id => Math.floor(elapsed(id) / 60000);
+const anyRunning = () => STATIONS.some(s => S.run[s.id]);
+
+/* =====================================================================
+   LEDGER — the filed days, kept sorted by date
+   ===================================================================== */
+let LEDGER = [];
+(function loadLedger(){
+  try {
+    const raw = JSON.parse(store.get(LS.ledger) || "[]");
+    if (Array.isArray(raw)) LEDGER = raw.filter(e =>
+      e && typeof e.date === "string" && e.minutes && typeof e.minutes === "object");
+  } catch(e){}
+  LEDGER.sort((a,b) => a.date.localeCompare(b.date));
+})();
+const saveLedger = () => store.set(LS.ledger, JSON.stringify(LEDGER));
+
+/* Insert or replace the entry for a date, keeping the array sorted. */
+function upsertDay(entry){
+  const i = LEDGER.findIndex(e => e.date === entry.date);
+  if (i >= 0) LEDGER[i] = entry; else LEDGER.push(entry);
+  LEDGER.sort((a,b) => a.date.localeCompare(b.date));
+  saveLedger();
+}
+
+/* The filed day immediately before `iso` — used for ▲/▼ deltas. */
+function dayBefore(iso){
+  let p = null;
+  for (const e of LEDGER){ if (e.date < iso) p = e; else break; }
+  return p;
+}
+
+/* =====================================================================
+   PER-MAP CALIBRATION
+   The rotating backgrounds are separate engravings, so a station may
+   sit at slightly different coordinates on each. Overrides are stored
+   as { "<map filename>": { "<station id>": {x,y}, ... }, ... }.
+   ===================================================================== */
+let CAL = {};
+(function loadCal(){
+  try { const c = JSON.parse(store.get(LS.cal) || "{}");
+        if (c && typeof c === "object") CAL = c; } catch(e){}
+})();
+const saveCal = () => store.set(LS.cal, JSON.stringify(CAL));
+
+/* Effective station list for a map: defaults + that map's overrides. */
+function stationsFor(file){
+  /* Calibration is keyed by filename. The maps became .webp, so fall
+     back to the old .png key when no .webp entry exists yet. */
+  const o = CAL[file] || CAL[file.replace(/\.webp$/, ".png")] || {};
+  return STATIONS.map(s => {
+    const c = o[s.id];
+    return c ? {...s, x:c.x, y:c.y} : {...s};
+  });
+}
+
+/* =====================================================================
+   THE PLATE ENGINE — draws map, discs, deltas, cartouche onto a canvas.
+   Same visual language as the printed plate: paper-ringed ink discs,
+   a numeral inside, the station name beside, ▲/▼ against the previous
+   filed day, and a size key reading like a scale bar.
+   ===================================================================== */
+const ENG = (function(){
+  const PAPER = "rgba(247,243,232,.93)";
+  const INK   = "#231c11";
+  /* Disc radius as a fraction of the map width. Every disc is this
+     size, whatever the clock says: the disc is a dial to be read, not
+     a quantity to be compared. Small enough to sit lightly on the
+     engraving, wide enough to hold 00:00 in readable type. Discs + /
+     − tunes it, and the setting is remembered. */
+  const DISC  = 0.0260;
+
+  const fmt = m => {
+    if (m == null) return "";
+    if (m < 60) return String(m);
+    const h = Math.floor(m/60), r = m % 60;
+    return r ? h + "h" + String(r).padStart(2,"0") : h + "h";
+  };
+
+  function disc(ctx, s, W, H, m, prev, opt){
+    const u = Math.max(1, W/1448), G = opt.scale || 1;
+    const x = s.x * W, y = s.y * H;
+    const R = DISC * W * G;
+    const none = (m == null);
+
+    /* The numeral. A live station reads as a stopwatch, a filed day as
+       plain minutes. */
+    const label = none ? "" : (opt.labelFor ? opt.labelFor(s.id, m) : fmt(m));
+    /* The face is set on two lines — the figure, and the hundredths
+       beneath it in smaller type. Two lines keep the widest line to
+       five characters, so the figure itself can be drawn large. */
+    const cut  = label.indexOf(".");
+    const head = cut < 0 ? label : label.slice(0, cut);
+    const tail = cut < 0 ? ""    : label.slice(cut);
+
+
+    ctx.beginPath(); ctx.arc(x, y, R + 2.6*u, 0, 7);
+    ctx.fillStyle = PAPER; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, R, 0, 7);
+    if (none){
+      /* not yet tapped today: a faint dashed ring, no numeral */
+      ctx.setLineDash([2.5*u, 3.5*u]); ctx.lineWidth = 1.4*u;
+      ctx.strokeStyle = "rgba(74,62,44,.62)"; ctx.stroke(); ctx.setLineDash([]);
+    } else {
+      ctx.fillStyle = "rgba(250,246,236,.98)"; ctx.fill();
+      ctx.lineWidth = 2.1*u; ctx.strokeStyle = INK; ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, R - 3.4*u, 0, 7);
+      ctx.lineWidth = 0.8*u; ctx.strokeStyle = "rgba(35,28,17,.42)"; ctx.stroke();
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      /* fit the figure inside the disc however long the day runs */
+      const mono = n => `600 ${n}px ui-monospace,"SF Mono",Menlo,monospace`;
+      let fs = R * (tail ? 0.72 : 0.86);
+      ctx.font = mono(fs);
+      const w = ctx.measureText(head).width, room = R * 1.66;
+      if (w > room){ fs *= room / w; ctx.font = mono(fs); }
+      ctx.fillStyle = INK;
+      if (tail){
+        ctx.fillText(head, x, y - fs*0.30);
+        ctx.font = mono(fs * 0.66);
+        ctx.fillStyle = "rgba(35,28,17,.72)";
+        ctx.fillText(tail, x, y + fs*0.52);
+      } else {
+        ctx.fillText(head, x, y + fs*0.04);
+      }
+    }
+
+    if (opt.labels){
+      const left = s.x > 0.62, ox = (left ? -1 : 1) * (R + 7*u);
+      ctx.textAlign = left ? "right" : "left"; ctx.textBaseline = "middle";
+      ctx.font = `italic ${14.5*u}px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif`;
+      ctx.lineWidth = 3.6*u; ctx.lineJoin = "round"; ctx.strokeStyle = PAPER;
+      ctx.strokeText(s.n, x + ox, y);
+      ctx.fillStyle = none ? "rgba(84,72,52,.78)" : "#211a10";
+      ctx.fillText(s.n, x + ox, y);
+    }
+
+    /* delta against the previous filed day */
+    const p = prev ? prev[s.id] : null;
+    if (p != null && m != null && m !== p){
+      const up = m > p, d = Math.abs(m - p);
+      ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      ctx.font = `600 ${10.5*u}px ui-monospace,Menlo,monospace`;
+      const t = (up ? "▲+" : "▼−") + d;
+      ctx.lineWidth = 3.2*u; ctx.strokeStyle = PAPER; ctx.strokeText(t, x, y - R - 6*u);
+      ctx.fillStyle = up ? "#2f6b40" : "#8f3a20"; ctx.fillText(t, x, y - R - 6*u);
+    }
+  }
+
+  /* Cartouche title block and the session-size key. */
+  function furniture(ctx, W, H, date, opt){
+    const u = Math.max(1, W/1448), G = opt.scale || 1;
+    const cx = W * 0.855, cy = H * 0.865;
+    const put = (t, f, dy, fill) => { ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      ctx.font = f; ctx.lineWidth = 3.6*u; ctx.lineJoin = "round";
+      ctx.strokeStyle = PAPER; ctx.strokeText(t, cx, cy + dy);
+      ctx.fillStyle = fill || "#1e2733"; ctx.fillText(t, cx, cy + dy); };
+    put("PENSACOLA POETS", `600 ${17*u}px "Iowan Old Style","Palatino Linotype",Georgia,serif`, -14*u);
+    put("A Survey of the Day", `italic ${13.5*u}px "Iowan Old Style",Georgia,serif`, 6*u);
+    put(date || "", `${11.5*u}px ui-monospace,Menlo,monospace`, 26*u);
+
+    /* The size key was retired with the sizing rule it explained:
+       every disc is now one size, and the face inside it carries the
+       whole of the measurement. */
+  }
+
+  /* The engraving that does not move: map and cartouche. Drawn once
+     per map, per day, per change of setting. */
+  function renderBase(ctx, img, date, opt){
+    opt = opt || {};
+    const W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+    ctx.canvas.width = W; ctx.canvas.height = H;
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(img, 0, 0, W, H);
+    furniture(ctx, W, H, date, opt);
+  }
+
+  /* The discs. Larger ones are drawn first so small ones are never
+     buried. This is the only thing repainted while a clock runs. */
+  function renderDiscs(ctx, W, H, stations, mins, prev, opt){
+    opt = opt || {};
+    if (!mins) return;
+    const order = stations.slice().sort((a,b) =>
+      (mins[b.id] == null ? -1 : mins[b.id]) - (mins[a.id] == null ? -1 : mins[a.id]));
+    order.forEach(s => disc(ctx, s, W, H, mins[s.id] == null ? null : mins[s.id], prev, opt));
+  }
+
+  /* Both faces at once, onto one canvas — used for Save PNG. */
+  function render(ctx, img, stations, mins, prev, date, opt){
+    renderBase(ctx, img, date, opt);
+    renderDiscs(ctx, ctx.canvas.width, ctx.canvas.height,
+                stations, mins, prev, opt);
+  }
+  return {render, renderBase, renderDiscs, fmt};
+})();
+
+/* =====================================================================
+   SURVEY VIEW — build the eight rows once, then render into them
+   ===================================================================== */
+const zonesEl = document.getElementById("zones");
+(function buildRows(){
+  let lastZone = null;
+  for (const s of STATIONS){
+    if (s.z !== lastZone){
+      const h = document.createElement("div");
+      h.className = "zone-hd"; h.textContent = s.z;
+      zonesEl.appendChild(h); lastZone = s.z;
+    }
+
+    const row = document.createElement("button");
+    row.className = "stn"; row.type = "button"; row.dataset.id = s.id;
+    row.innerHTML =
+      '<span class="disc-cell">' +
+        '<svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">' +
+          '<circle class="ring" cx="32" cy="32" r="29" fill="none" ' +
+                  'stroke="#40695d" stroke-width=".9" opacity="0"/>' +
+          '<circle class="disc" cx="32" cy="32" r="6" fill="#35301f"/>' +
+        '</svg>' +
+      '</span>' +
+      '<span class="nm">' + s.n + '<span class="sub"></span></span>' +
+      '<span class="fig" role="button" tabindex="0">' +
+        '<span class="m">0</span><span class="u">min</span></span>';
+    zonesEl.appendChild(row);
+
+    const fix = document.createElement("div");
+    fix.className = "fix"; fix.dataset.for = s.id;
+    fix.innerHTML =
+      '<span class="lbl">Correct ' + s.n + '</span>' +
+      [-30,-10,-5,5,10,30].map(n =>
+        '<button type="button" data-d="'+n+'">'+(n>0?"+":"−")+Math.abs(n)+'</button>'
+      ).join("") +
+      '<button type="button" class="zero" data-d="clear">clear</button>' +
+      '<span class="entry">' +
+        '<input type="number" inputmode="numeric" min="0" max="1440" step="1" ' +
+               'placeholder="min" aria-label="minutes">' +
+        '<button type="button" data-k="set">Set</button>' +
+        '<button type="button" data-k="add">Add</button>' +
+      '</span>';
+    zonesEl.appendChild(fix);
+
+    /* tap the row → start or stop */
+    row.addEventListener("click", ev => {
+      if (ev.target.closest(".fig")) return;   // the numeral has its own job
+      toggle(s.id);
+    });
+
+    /* tap the numeral → open the correction strip */
+    const fig = row.querySelector(".fig");
+    const openFix = ev => {
+      ev.stopPropagation();
+      const open = fix.dataset.open === "1";
+      document.querySelectorAll(".fix").forEach(f => f.dataset.open = "0");
+      fix.dataset.open = open ? "0" : "1";
+    };
+    fig.addEventListener("click", openFix);
+    fig.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " "){ e.preventDefault(); openFix(e); }
+    });
+    fix.addEventListener("click", ev => {
+      const b = ev.target.closest("button"); if (!b) return;
+      const box = fix.querySelector(".entry input");
+      if (b.dataset.k){
+        const m = parseInt(box.value, 10);
+        if (!isFinite(m) || m < 0){ box.focus(); return; }
+        correct(s.id, b.dataset.k === "set" ? "set:" + m : m);
+        box.value = "";
+      } else {
+        correct(s.id, b.dataset.d);
+      }
+    });
+    fix.addEventListener("keydown", ev => {
+      if (ev.key !== "Enter" || !ev.target.closest(".entry input")) return;
+      ev.preventDefault();
+      const box = ev.target, m = parseInt(box.value, 10);
+      if (!isFinite(m) || m < 0) return;
+      correct(s.id, "set:" + m); box.value = "";
+    });
+  }
+})();
+
+function toggle(id){
+  if (S.run[id]){
+    S.acc[id] += Date.now() - S.run[id];
+    S.run[id] = null;
+  } else {
+    S.run[id] = Date.now();
+  }
+  saveDay(); refreshLive();
+}
+
+/* A correction is one of three things: "clear", "set:<minutes>", or a
+   number of minutes to add. A station left running is folded in first,
+   so the arithmetic is never ambiguous, and it keeps running after. */
+function correct(id, d){
+  if (S.run[id]){ S.acc[id] += Date.now() - S.run[id]; S.run[id] = Date.now(); }
+
+  if (d === "clear"){
+    S.acc[id] = 0;
+  } else if (typeof d === "string" && d.startsWith("set:")){
+    const m = Number(d.slice(4));
+    if (!isFinite(m)) return;
+    S.acc[id] = Math.max(0, m) * 60000;
+  } else {
+    const m = Number(d);
+    if (!isFinite(m)) return;
+    S.acc[id] = Math.max(0, S.acc[id] + m * 60000);
+  }
+  saveDay(); refreshLive();
+}
+
+/* Redraw whatever face is on screen. Both faces read the same state,
+   so either may have been the one that changed it. */
+function refreshLive(){
+  renderSurvey();
+  if (document.getElementById("v-plate").dataset.on === "1"){
+    renderPlate(); syncTaps();
+  }
+}
+
+/* Survey-row disc geometry, matching the plate's sizing rule. */
+function rowRadius(id, ref){
+  const m = minutes(id);
+  if (m <= 0) return R_MIN;
+  return Math.min(R_CAP, R_MIN + (R_REF - R_MIN) * Math.sqrt(Math.min(m/ref, 1.8)));
+}
+
+function renderSurvey(){
+  document.getElementById("day").textContent = longDate(S.date);
+
+  for (const s of STATIONS){
+    const row  = zonesEl.querySelector('.stn[data-id="'+s.id+'"]');
+    const on   = !!S.run[s.id];
+    const m    = minutes(s.id);
+    const disc = row.querySelector(".disc");
+    const ring = row.querySelector(".ring");
+
+    row.dataset.on = on ? "1" : "0";
+    disc.setAttribute("r", rowRadius(s.id, s.ref).toFixed(2));
+    disc.setAttribute("fill", on ? "#40695d" : "#35301f");
+    disc.setAttribute("opacity", m > 0 ? "1" : ".28");
+    ring.setAttribute("opacity", on ? "1" : "0");
+    ring.classList.toggle("pulse", on);
+
+    row.querySelector(".fig .m").textContent = m;
+
+    let sub = s.g;
+    if (on){
+      const sess = Date.now() - S.run[s.id];
+      const mm = Math.floor(sess/60000), ss = Math.floor(sess/1000) % 60;
+      sub = "surveying · " + mm + ":" + String(ss).padStart(2,"0");
+      if (sess > LONG_RUN_MS) sub += ' <span class="long">— still running</span>';
+    }
+    row.querySelector(".sub").innerHTML = sub;
+
+    row.setAttribute("aria-label",
+      s.n + ", " + m + " minutes, " + (on ? "running" : "stopped"));
+  }
+  renderNotices();
+}
+
+/* Notices: a plate left open from a previous day, a stranded timer. */
+function renderNotices(){
+  const el = document.getElementById("stale");
+  const bits = [];
+  if (S.date !== isoDate(new Date()))
+    bits.push("<b>This plate is dated " + longDate(S.date) + ".</b> " +
+      "File it to keep the record and begin today." +
+      '<button type="button" id="b-stalefile">File ' + S.date +
+      " &amp; begin today</button>");
+  if (stranded.length)
+    bits.push("<b>" + stranded.join(" and ") + " was still running after " +
+      "twelve hours and has been stopped.</b> Nothing was credited — " +
+      "correct the count by hand.");
+  el.dataset.open = bits.length ? "1" : "0";
+  el.innerHTML = bits.join("<br><br>");
+  const b = document.getElementById("b-stalefile");
+  if (b) b.addEventListener("click", fileDay);
+}
+
+/* --- closing and filing the day -------------------------------------- */
+const closeEl = document.getElementById("close");
+const outEl   = document.getElementById("out");
+
+const dayLine = () => {
+  const mins = {};
+  for (const s of STATIONS) mins[s.id] = minutes(s.id);
+  return {date: S.date, minutes: mins};
+};
+
+document.getElementById("b-close").addEventListener("click", () => {
+  const open = closeEl.dataset.open === "1";
+  closeEl.dataset.open = open ? "0" : "1";
+  if (!open){
+    outEl.value = JSON.stringify(dayLine());
+    outEl.scrollIntoView({behavior:"smooth", block:"nearest"});
+  }
+});
+
+document.getElementById("b-copy").addEventListener("click", async ev => {
+  const b = ev.currentTarget, was = b.textContent;
+  try { await navigator.clipboard.writeText(outEl.value); }
+  catch(e){ outEl.removeAttribute("readonly"); outEl.select();
+            document.execCommand("copy"); outEl.setAttribute("readonly",""); }
+  b.textContent = "Copied";
+  setTimeout(() => b.textContent = was, 1400);
+});
+
+/* File the live day into the ledger, then open a fresh plate for today. */
+function fileDay(){
+  /* fold any running timers so the filed line is final */
+  for (const s of STATIONS){
+    if (S.run[s.id]){ S.acc[s.id] += Date.now() - S.run[s.id]; S.run[s.id] = null; }
+  }
+  upsertDay(dayLine());
+  S = blank(isoDate(new Date()));
+  stranded = [];
+  saveDay();
+  closeEl.dataset.open = "0";
+  document.querySelectorAll(".fix").forEach(f => f.dataset.open = "0");
+  PLATE.date = null;                       // the plate follows the new live day
+  renderSurvey(); renderLedger(); renderPlate();
+}
+document.getElementById("b-file").addEventListener("click", () => {
+  if (confirm("File " + S.date + " into the ledger and begin a new day?")) fileDay();
+});
+
+/* =====================================================================
+   PLATE VIEW
+   ===================================================================== */
+const cv  = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+
+/* What the plate is showing: {date:null} means the live day. */
+const PLATE = { date: null };
+let LABELS = true, SCALE = 1, CALMODE = false;
+/* Disc size and names are a matter of screen and taste, so the choice
+   is kept between visits. */
+(function loadView(){
+  try {
+    const v = JSON.parse(store.get(LS.view) || "{}");
+    if (typeof v.scale === "number" && isFinite(v.scale))
+      SCALE = Math.max(.50, Math.min(2.2, v.scale));
+    if (typeof v.labels === "boolean") LABELS = v.labels;
+  } catch(e){}
+})();
+const saveView = () =>
+  store.set(LS.view, JSON.stringify({scale: SCALE, labels: LABELS}));
+
+/* Image cache, one entry per map filename. A manually chosen file
+   (via the "Map file…" picker) overrides everything for this session —
+   useful if the map folder is missing or on a device without it. */
+const IMG_CACHE = {};
+let MANUAL_IMG = null;
+
+function loadMap(file, cb){
+  if (MANUAL_IMG){ cb(MANUAL_IMG); return; }
+  const hit = IMG_CACHE[file];
+  if (hit && hit.complete && hit.naturalWidth){ cb(hit); return; }
+  const im = new Image();
+  im.onload  = () => cb(im);
+  im.onerror = () => cb(null);
+  im.src = encodeURI(MAPS.dir + "/" + file);
+  IMG_CACHE[file] = im;
+}
+
+/* Assemble what the plate should show right now. */
+function plateData(){
+  if (PLATE.date){
+    const i = LEDGER.findIndex(e => e.date === PLATE.date);
+    if (i >= 0){
+      const prev = i > 0 ? LEDGER[i-1].minutes : null;
+      return { date: PLATE.date, mins: LEDGER[i].minutes, prev, live:false };
+    }
+    PLATE.date = null;   // that day vanished (deleted) — fall back to live
+  }
+  const mins = {};
+  for (const s of STATIONS){
+    const m = minutes(s.id);
+    /* A station is blank until it is first tapped, and never again.
+       The test is any recorded time at all, not a whole minute, so a
+       twenty-second session still leaves its mark on the map. Only
+       "clear" returns a station to blank. */
+    mins[s.id] = (elapsed(s.id) > 0 || S.run[s.id]) ? m : null;
+  }
+  const p = dayBefore(S.date);
+  return { date: S.date, mins, prev: p ? p.minutes : null, live:true };
+}
+
+function renderPlate(){
+  const d = plateData();
+  const file = mapFileFor(d.date);
+  const cap = document.getElementById("cap");
+  loadMap(file, img => {
+    if (!img){
+      cap.innerHTML = "<b>Could not load “" + MAPS.dir + "/" + file +
+        "”.</b> Keep this file beside the “" + MAPS.dir +
+        "” folder, or choose an image with “Map file…”.";
+      return;
+    }
+    LASTIMG = img;
+    if (CALMODE) paintCal(img, file);
+    else ENG.renderBase(ctx, img, d.date, {labels: LABELS, scale: SCALE});
+    paintDiscs();
+    syncTaps();
+    startFace();
+    cap.innerHTML = (d.live
+        ? "Tap a station on the map to start it, tap again to stop. Long-press to correct."
+        : "Filed day — <b>" + longDate(d.date) + "</b>. " +
+          '<a href="#" id="a-live">Return to today</a>.')
+      + " · plate " + file.replace(MAPS.prefix,"").replace(MAPS.ext,"")
+      + " of " + MAPS.count;
+    const a = document.getElementById("a-live");
+    if (a) a.addEventListener("click", e => {
+      e.preventDefault(); PLATE.date = null; renderPlate();
+    });
+  });
+}
+
+/* ---- calibration painting & dragging -------------------------------- */
+let SEL = 0, dragging = null;
+
+function paintCal(img, file){
+  const W = img.naturalWidth, H = img.naturalHeight;
+  cv.width = W; cv.height = H;
+  ctx.clearRect(0,0,W,H); ctx.drawImage(img,0,0,W,H);
+  const u = Math.max(1, W/1448);
+  stationsFor(file).forEach((s,i) => {
+    const x = s.x*W, y = s.y*H, on = (i === SEL), R = 12*u;
+    ctx.beginPath(); ctx.arc(x,y,R+2.6*u,0,7);
+    ctx.fillStyle = "rgba(247,243,232,.9)"; ctx.fill();
+    ctx.beginPath(); ctx.arc(x,y,R,0,7);
+    ctx.fillStyle = on ? "#2f6f4f" : "rgba(150,140,120,.55)"; ctx.fill();
+    ctx.lineWidth = (on?2.6:1.8)*u;
+    ctx.strokeStyle = on ? "#0f3320" : "rgba(32,26,16,.85)"; ctx.stroke();
+    const left = s.x > .62, ox = (left?-1:1)*(R+7*u);
+    ctx.textAlign = left ? "right" : "left"; ctx.textBaseline = "middle";
+    ctx.font = `${(on?15:12.5)*u}px ui-sans-serif,Arial,sans-serif`;
+    ctx.lineWidth = 3.4*u; ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(247,243,232,.92)";
+    ctx.strokeText(s.n, x+ox, y);
+    ctx.fillStyle = on ? "#0f3320" : "#2b2519"; ctx.fillText(s.n, x+ox, y);
+  });
+  refreshCalBox(file);
+}
+
+function refreshCalBox(file){
+  document.getElementById("calout").value = JSON.stringify(
+    stationsFor(file).map(s => ({id:s.id, x:+s.x.toFixed(4), y:+s.y.toFixed(4)})));
+}
+
+function setCalXY(file, id, x, y){
+  if (!CAL[file]) CAL[file] = {};
+  CAL[file][id] = { x: Math.max(0, Math.min(1, x)),
+                    y: Math.max(0, Math.min(1, y)) };
+  saveCal();
+}
+
+cv.addEventListener("pointerdown", e => {
+  if (!CALMODE) return;
+  const file = mapFileFor(plateData().date);
+  const r = cv.getBoundingClientRect();
+  const px = (e.clientX - r.left)/r.width, py = (e.clientY - r.top)/r.height;
+  /* pick the nearest station and start dragging it */
+  let best = -1, bd = 1e9;
+  stationsFor(file).forEach((s,i) => {
+    const d = Math.hypot(s.x - px, (s.y - py)*(cv.height/cv.width));
+    if (d < bd){ bd = d; best = i; }
+  });
+  if (best >= 0){
+    SEL = best; dragging = STATIONS[best].id;
+    setCalXY(file, dragging, px, py);
+    cv.setPointerCapture(e.pointerId);
+    renderPlate();
+  }
+});
+cv.addEventListener("pointermove", e => {
+  if (!CALMODE || dragging === null) return;
+  const file = mapFileFor(plateData().date);
+  const r = cv.getBoundingClientRect();
+  setCalXY(file, dragging,
+    (e.clientX - r.left)/r.width, (e.clientY - r.top)/r.height);
+  renderPlate();
+});
+cv.addEventListener("pointerup",     () => dragging = null);
+cv.addEventListener("pointercancel", () => dragging = null);
+
+/* keyboard nudge for the selected station (desktop convenience) */
+window.addEventListener("keydown", e => {
+  if (!CALMODE) return;
+  const file = mapFileFor(plateData().date);
+  const s = stationsFor(file)[SEL]; if (!s) return;
+  const k = e.shiftKey ? 0.01 : 0.002; let hit = true;
+  let x = s.x, y = s.y;
+  if      (e.key === "ArrowLeft")  x -= k;
+  else if (e.key === "ArrowRight") x += k;
+  else if (e.key === "ArrowUp")    y -= k;
+  else if (e.key === "ArrowDown")  y += k;
+  else if (e.key === "Tab"){ SEL = (SEL + (e.shiftKey?-1:1) + STATIONS.length) % STATIONS.length;
+                             hit = true; x = null; }
+  else hit = false;
+  if (hit){
+    e.preventDefault();
+    if (x !== null) setCalXY(file, s.id, x, y);
+    renderPlate();
+  }
+});
+
+/* ---- plate controls -------------------------------------------------- */
+document.getElementById("b-live").addEventListener("click", () => {
+  PLATE.date = null; renderPlate();
+});
+document.getElementById("b-bigger").addEventListener("click", () => {
+  SCALE = Math.min(2.2, SCALE*1.08); saveView(); renderPlate();
+});
+document.getElementById("b-smaller").addEventListener("click", () => {
+  SCALE = Math.max(.50, SCALE/1.08); saveView(); renderPlate();
+});
+document.getElementById("b-labels").addEventListener("click", e => {
+  LABELS = !LABELS;
+  e.currentTarget.setAttribute("aria-pressed", String(LABELS));
+  saveView(); renderPlate();
+});
+document.getElementById("b-print").addEventListener("click", () => window.print());
+
+document.getElementById("b-calib").addEventListener("click", e => {
+  CALMODE = !CALMODE;
+  e.currentTarget.setAttribute("aria-pressed", String(CALMODE));
+  document.getElementById("calpane").dataset.open = CALMODE ? "1" : "0";
+  cv.className = CALMODE ? "cal" : "";
+  syncTaps();
+  renderPlate();
+});
+document.getElementById("b-cal-reset").addEventListener("click", () => {
+  const file = mapFileFor(plateData().date);
+  if (!confirm("Reset every station on " + file + " to the default coordinates?")) return;
+  delete CAL[file]; saveCal(); renderPlate();
+});
+document.getElementById("b-cal-copy").addEventListener("click", async () => {
+  const t = document.getElementById("calout");
+  try { await navigator.clipboard.writeText(t.value); } catch(e){ t.select(); }
+});
+document.getElementById("b-cal-paste").addEventListener("click", () => {
+  const file = mapFileFor(plateData().date);
+  try {
+    const arr = JSON.parse(document.getElementById("calout").value);
+    arr.forEach(o => { if (o && o.id) setCalXY(file, o.id, o.x, o.y); });
+    renderPlate();
+  } catch(e){ alert("Could not read that calibration: " + e.message); }
+});
+
+/* manual map image, session-only override */
+document.getElementById("f-img").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    const im = new Image();
+    im.onload = () => { MANUAL_IMG = im; renderPlate(); };
+    im.src = rd.result;
+  };
+  rd.readAsDataURL(f);
+});
+
+/* Save PNG — with a fall-back message for sandboxed contexts. */
+const SANDBOXED = (() => {
+  try { return window.self !== window.top; } catch(e){ return true; }
+})();
+document.getElementById("b-png").addEventListener("click", () => {
+  /* The saved plate is one image, so the two layers are drawn together
+     at the engraving's own size. */
+  const d = plateData(), file = mapFileFor(d.date);
+  const out = document.createElement("canvas");
+  out.width = cv.width; out.height = cv.height;
+  const oc = out.getContext("2d");
+  oc.drawImage(cv, 0, 0);
+  ENG.renderDiscs(oc, out.width, out.height, stationsFor(file), d.mins, d.prev, {
+    labels: LABELS, scale: SCALE, px: out.width / 1448,
+    labelFor: d.live ? id => swFace(elapsed(id)) : null
+  });
+  out.toBlob(b => {
+    if (!b) return;
+    if (SANDBOXED){ alert("Downloads are blocked in this embedded view. " +
+      "Open the file directly in a browser to save."); return; }
+    const u = URL.createObjectURL(b), a = document.createElement("a");
+    a.href = u; a.download = "poets_" + plateData().date + ".png";
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(u); a.remove(); }, 4000);
+  }, "image/png");
+});
+
+/* =====================================================================
+   LEDGER VIEW
+   ===================================================================== */
+function renderLedger(){
+  const head = document.getElementById("lg-head");
+  const body = document.getElementById("lg-body");
+  head.innerHTML = "<th>date</th>" +
+    STATIONS.map(s => "<th>" + s.n + "</th>").join("") +
+    "<th>total</th><th></th>";
+  body.innerHTML = "";
+  document.getElementById("lg-empty").style.display = LEDGER.length ? "none" : "block";
+
+  /* newest first for reading; the stored array stays oldest-first */
+  [...LEDGER].reverse().forEach(e => {
+    const tr = document.createElement("tr");
+    let tot = 0;
+    const cells = STATIONS.map(s => {
+      const m = e.minutes[s.id];
+      if (typeof m === "number") tot += m;
+      return "<td>" + (typeof m === "number" ? m : "—") + "</td>";
+    }).join("");
+    tr.innerHTML = "<td>" + e.date + "</td>" + cells +
+      '<td class="tot">' + tot + '</td><td class="del" title="Delete">×</td>';
+
+    /* tap a row → show that day on the plate */
+    tr.addEventListener("click", ev => {
+      if (ev.target.classList.contains("del")){
+        if (confirm("Delete the filed day " + e.date + "?")){
+          LEDGER = LEDGER.filter(x => x.date !== e.date);
+          saveLedger(); renderLedger();
+          if (PLATE.date === e.date){ PLATE.date = null; renderPlate(); }
+        }
+        return;
+      }
+      PLATE.date = e.date;
+      setView("plate");
+    });
+    body.appendChild(tr);
+  });
+}
+
+/* ---- export / import ------------------------------------------------- */
+const ioEl = document.getElementById("io");
+
+document.getElementById("b-exp").addEventListener("click", () => {
+  ioEl.value = LEDGER.map(e => JSON.stringify(e)).join("\n");
+  ioEl.select();
+});
+
+/* Accepts JSONL — one {"date","minutes"} object per line. Lines with a
+   date already in the ledger replace that day. The old overlay's
+   {"scores":…} shape is accepted for old logs. */
+function importText(text){
+  const lines = text.split("\n").map(s => s.trim()).filter(Boolean);
+  let n = 0, bad = 0;
+  for (const line of lines){
+    try {
+      const o = JSON.parse(line);
+      if (!o || typeof o.date !== "string") { bad++; continue; }
+      const src = o.minutes || o.scores || {};
+      const mins = {};
+      STATIONS.forEach(s => {
+        const v = src[s.id];
+        if (v !== undefined && v !== null && !isNaN(v)) mins[s.id] = Math.round(v);
+      });
+      upsertDay({date: o.date, minutes: mins});
+      n++;
+    } catch(e){ bad++; }
+  }
+  renderLedger();
+  alert(n + " day(s) imported" + (bad ? ", " + bad + " line(s) unreadable." : "."));
+}
+document.getElementById("b-imp").addEventListener("click", () => importText(ioEl.value));
+document.getElementById("f-imp").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => importText(rd.result);
+  rd.readAsText(f);
+});
+
+
+
+/* =====================================================================
+   THE STOPWATCH FACE
+
+   Always the same shape: two digits of minutes, two of seconds, two of
+   hundredths. A face begins at 00:00.00, so the disc is drawn from the
+   first moment with room for every digit it will ever need, and the
+   numerals never jump about as the count climbs.
+
+   Minutes are not rolled into hours. A long station simply carries a
+   third digit — 360:00 — which the disc absorbs by setting its type a
+   little smaller.
+   ===================================================================== */
+function swFace(ms){
+  const t = Math.max(0, Math.floor(ms));
+  const p = n => String(n).padStart(2, "0");
+  return p(Math.floor(t / 60000)) + ":" + p(Math.floor(t / 1000) % 60)
+       + "." + p(Math.floor((t % 1000) / 10));
+}
+
+/* =====================================================================
+   THE DISC LAYER
+   Sized to the screen, not to the engraving, so a repaint costs as
+   little as possible on an old tablet.
+   ===================================================================== */
+const cv2 = document.getElementById("cv2");
+const ctx2 = cv2.getContext("2d");
+let LASTIMG = null;
+
+function paintDiscs(){
+  const img = LASTIMG; if (!img) return;
+  const d = plateData(), file = mapFileFor(d.date);
+  const cssW = cv.clientWidth || cv.width;
+  const dpr  = Math.min(window.devicePixelRatio || 1, 2);
+  const W = Math.max(320, Math.round(cssW * dpr));
+  const H = Math.round(W * ((img.naturalHeight || img.height) /
+                            (img.naturalWidth  || img.width)));
+  if (cv2.width !== W || cv2.height !== H){ cv2.width = W; cv2.height = H; }
+  ctx2.clearRect(0, 0, W, H);
+  if (CALMODE) return;
+  ENG.renderDiscs(ctx2, W, H, stationsFor(file), d.mins, d.prev, {
+    labels: LABELS, scale: SCALE, px: W / Math.max(1, cssW),
+    labelFor: d.live ? id => swFace(elapsed(id)) : null
+  });
+}
+
+/* The face runs while a clock runs, the plate is on screen, and the
+   screen is awake. It stops itself the moment any of those ends, so
+   nothing is spent on a dark tablet. */
+let faceRaf = null, facePaint = 0;
+function faceOn(){
+  return anyRunning() && !CALMODE && !PLATE.date && !document.hidden
+      && document.getElementById("v-plate").dataset.on === "1";
+}
+function faceStep(ts){
+  faceRaf = null;
+  if (!faceOn()) return;
+  if (ts - facePaint >= 45){ facePaint = ts; paintDiscs(); }
+  faceRaf = requestAnimationFrame(faceStep);
+}
+function startFace(){
+  if (faceRaf === null && faceOn()) faceRaf = requestAnimationFrame(faceStep);
+}
+
+/* =====================================================================
+   THE TAP LAYER — the map is the instrument
+
+   Eight transparent circular buttons sit over the canvas at each
+   station's calibrated position. A tap starts or stops that station.
+   A long press opens the correction strip.
+
+   The buttons are laid out again whenever the map is drawn, because
+   calibration moves the stations from one engraving to the next.
+
+   The taps are withheld in two cases: while calibrating (the drag
+   belongs to the canvas), and while a filed day is on the plate
+   (a closed day is a record, not a stopwatch).
+   ===================================================================== */
+const tapsEl = document.getElementById("taps");
+const popEl  = document.getElementById("fixpop");
+const TAPS   = {};          // station id -> button
+
+(function buildTaps(){
+  for (const s of STATIONS){
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "tap"; b.dataset.id = s.id;
+    b.setAttribute("aria-label", s.n);
+    b.innerHTML = '<span class="halo"></span><span class="pulse"></span>';
+    tapsEl.appendChild(b);
+    TAPS[s.id] = b;
+
+    /* A press that lasts, or that wanders, is not a tap. */
+    let timer = null, moved = false, x0 = 0, y0 = 0, held = false;
+    const clear = () => { clearTimeout(timer); timer = null; };
+
+    b.addEventListener("pointerdown", e => {
+      moved = false; held = false; x0 = e.clientX; y0 = e.clientY;
+      timer = setTimeout(() => { held = true; openFixPop(s); }, 550);
+    });
+    b.addEventListener("pointermove", e => {
+      if (Math.hypot(e.clientX - x0, e.clientY - y0) > 12){ moved = true; clear(); }
+    });
+    b.addEventListener("pointerup", () => clear());
+    b.addEventListener("pointercancel", () => { clear(); moved = true; });
+    b.addEventListener("contextmenu", e => e.preventDefault());
+    b.addEventListener("click", () => {
+      clear();
+      if (held || moved) return;      // the long press already acted
+      closeFixPop();
+      toggle(s.id);
+    });
+  }
+})();
+
+/* Put each button over its station and give it a thumb-sized target.
+   Position is a percentage, so it holds at any size. Only the target
+   diameter needs a measurement, and the map is sometimes not measured
+   yet on the first paint — in that case, ask again on the next frame. */
+function layoutTaps(){
+  const file = mapFileFor(plateData().date);
+  const w = tapsEl.clientWidth;
+  /* The target is the disc. Same centre, same size, floored at the
+     smallest thing a thumb can find. */
+  const d = w ? Math.max(44, 2 * 0.052 * w * SCALE) : 0;
+  for (const s of stationsFor(file)){
+    const b = TAPS[s.id]; if (!b) continue;
+    b.style.left = (s.x * 100) + "%";
+    b.style.top  = (s.y * 100) + "%";
+    if (d) b.style.width = b.style.height = d + "px";
+  }
+  if (!w) requestAnimationFrame(() => { if (tapsEl.clientWidth) layoutTaps(); });
+}
+
+/* Mark the stations that are running. */
+function syncTaps(){
+  const live = !PLATE.date && !CALMODE;
+  tapsEl.dataset.off = live ? "0" : "1";
+  if (!live){ closeFixPop(); return; }
+  for (const s of STATIONS)
+    TAPS[s.id].dataset.run = S.run[s.id] ? "1" : "0";
+  layoutTaps();
+}
+
+/* ---- the correction strip, opened by a long press ---- */
+let POPFOR = null;
+function openFixPop(s){
+  POPFOR = s.id;
+  popEl.innerHTML = '<span class="lbl">Correct ' + s.n + ' — now ' +
+    minutes(s.id) + ' min</span>' +
+    [-30,-10,-5,5,10,30].map(n =>
+      '<button type="button" data-d="' + n + '">' +
+      (n > 0 ? "+" : "\u2212") + Math.abs(n) + '</button>').join("") +
+    '<button type="button" class="zero" data-d="clear">clear</button>' +
+    /* For a session the instrument never saw: type the minutes, then
+       Set to make the station read exactly that, or Add to put it on
+       top of what is already there. */
+    '<span class="entry">' +
+      '<input type="number" inputmode="numeric" min="0" max="1440" step="1" ' +
+             'placeholder="min" aria-label="minutes">' +
+      '<button type="button" data-k="set">Set</button>' +
+      '<button type="button" data-k="add">Add</button>' +
+    '</span>';
+  const b = TAPS[s.id];
+  popEl.style.left = b.style.left;
+  popEl.style.top  = (parseFloat(b.style.top) || 0) + "%";
+  popEl.dataset.open = "1";
+
+  /* A station near an edge would push the strip off the plate. */
+  const host = tapsEl.clientWidth, half = popEl.offsetWidth / 2;
+  if (host && half){
+    const want = (parseFloat(b.style.left) || 0) / 100 * host;
+    const put  = Math.max(half + 4, Math.min(host - half - 4, want));
+    popEl.style.left = (put / host * 100) + "%";
+  }
+}
+function closeFixPop(){ popEl.dataset.open = "0"; POPFOR = null; }
+
+function popEcho(id){
+  const s = STATIONS.find(q => q.id === id);
+  popEl.querySelector(".lbl").textContent =
+    "Correct " + s.n + " \u2014 now " + minutes(id) + " min";
+}
+
+popEl.addEventListener("click", ev => {
+  const b = ev.target.closest("button"); if (!b || !POPFOR) return;
+  const id = POPFOR, box = popEl.querySelector(".entry input");
+
+  if (b.dataset.k){
+    const m = parseInt(box.value, 10);
+    if (!isFinite(m) || m < 0){ box.focus(); return; }
+    correct(id, b.dataset.k === "set" ? "set:" + m : m);
+    box.value = "";
+  } else {
+    correct(id, b.dataset.d);
+  }
+  popEcho(id);
+});
+
+/* Enter on the box means Set — the commoner of the two by far. */
+popEl.addEventListener("keydown", ev => {
+  if (ev.key !== "Enter" || !POPFOR) return;
+  const box = ev.target.closest(".entry input"); if (!box) return;
+  ev.preventDefault();
+  const m = parseInt(box.value, 10);
+  if (!isFinite(m) || m < 0) return;
+  correct(POPFOR, "set:" + m);
+  box.value = ""; popEcho(POPFOR);
+});
+document.addEventListener("pointerdown", ev => {
+  if (popEl.dataset.open !== "1") return;
+  if (ev.target.closest("#fixpop") || ev.target.closest(".tap")) return;
+  closeFixPop();
+}, true);
+
+window.addEventListener("resize", () => {
+  if (!PLATE.date) layoutTaps();
+  paintDiscs();
+});
+window.addEventListener("load",   () => { if (!PLATE.date) layoutTaps(); });
+
+/* Jump to the closing strip, which still lives on the Survey. */
+document.getElementById("b-file-jump").addEventListener("click", () => {
+  setView("survey");
+  document.getElementById("b-close").click();
+  document.getElementById("close").scrollIntoView({behavior:"smooth", block:"center"});
+});
+
+/* =====================================================================
+   NAVIGATION
+   ===================================================================== */
+function setView(v){
+  document.querySelectorAll(".view").forEach(el =>
+    el.dataset.on = (el.id === "v-" + v) ? "1" : "0");
+  document.querySelectorAll("nav button").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.v === v)));
+  document.getElementById("nav").className = (v === "survey") ? "" : "wide";
+  if (v === "plate")  renderPlate();
+  else if (faceRaf !== null){ cancelAnimationFrame(faceRaf); faceRaf = null; }
+  if (v === "ledger") renderLedger();
+}
+document.querySelectorAll("nav button").forEach(b =>
+  b.addEventListener("click", () => setView(b.dataset.v)));
+
+/* =====================================================================
+   HEARTBEATS — derive, never accumulate, so none of these can drift
+   ===================================================================== */
+/* tick the survey clocks */
+setInterval(() => {
+  if (anyRunning() && document.getElementById("v-survey").dataset.on === "1")
+    renderSurvey();
+}, 1000);
+/* Keep a live plate honest even when nothing is running: the discs
+   themselves only change on the minute, and the face loop covers the
+   rest. */
+setInterval(() => {
+  if (!anyRunning() && !PLATE.date && !CALMODE
+      && document.getElementById("v-plate").dataset.on === "1")
+    paintDiscs();
+}, 30e3);
+/* survive a hard kill */
+setInterval(saveDay, 20000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden){ renderSurvey(); startFace(); } else saveDay();
+});
+window.addEventListener("pagehide", saveDay);
+
+if (!store.live){
+  document.getElementById("note").innerHTML =
+    "<b>Storage is refused here — the live day is being carried in the " +
+    "address bar instead.</b> It will survive a reload and a restored tab, " +
+    "but the ledger cannot persist. Host this file (GitHub Pages) or leave " +
+    "this tab open.";
+}
+
+document.getElementById("b-labels").setAttribute("aria-pressed", String(LABELS));
+
+toHash();
+renderSurvey();
+setView("plate");
+</script>
+<script>
+/* Register the service worker so the instrument opens without a network.
+   Silent on failure: the page works either way. */
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")){
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
