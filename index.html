@@ -1101,7 +1101,7 @@ function renderPlate(){
     syncTaps();
     startFace();
     cap.innerHTML = (d.live
-        ? "Tap a station on the map to start it, tap again to stop. Long-press to correct."
+        ? "Click a station to start it, click again to stop. Control-click, or hold, to correct."
         : "Filed day — <b>" + longDate(d.date) + "</b>. " +
           '<a href="#" id="a-live">Return to today</a>.')
       + " · plate " + file.replace(MAPS.prefix,"").replace(MAPS.ext,"")
@@ -1469,10 +1469,21 @@ const TAPS   = {};          // station id -> button
     });
     b.addEventListener("pointerup", () => clear());
     b.addEventListener("pointercancel", () => { clear(); moved = true; });
-    b.addEventListener("contextmenu", e => e.preventDefault());
-    b.addEventListener("click", () => {
+
+    /* Control-click on a Mac, right-click elsewhere, two fingers on a
+       trackpad: the same strip the long press opens, without the wait.
+       `held` is set so the click that may follow does not also start
+       the station. */
+    b.addEventListener("contextmenu", e => {
+      e.preventDefault();
+      clear(); held = true;
+      openFixPop(s);
+    });
+
+    b.addEventListener("click", e => {
       clear();
-      if (held || moved) return;      // the long press already acted
+      if (held || moved) return;          // the strip already acted
+      if (e.ctrlKey || e.button > 0) return;   // that was a right-click
       closeFixPop();
       toggle(s.id);
     });
