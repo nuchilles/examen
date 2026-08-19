@@ -1,4 +1,4 @@
-# Pensacola Poets
+# Examen
 
 A one-file instrument for timing eight daily stations. The day is drawn as
 eight stopwatch faces on an engraved map. Every face is the same size; the
